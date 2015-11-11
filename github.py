@@ -2,6 +2,7 @@
 import requests
 import logging
 import click
+import re
 
 # Assumes the following branch structure:
 #   - develop:        used for the latest version of the code
@@ -25,11 +26,20 @@ access_token = get_access_token()
 class GithubException(Exception):
     pass
 
-def get_latest_version():
-    return (1, 8, 0)
+def get_latest_version(owner, repo):
+    url = "https://api.github.com/repos/{}/{}/releases/latest{}".format(owner, repo, access_token_postfix())
+    response = requests.get(url)
+    if response.status_code == 200:
+        json = response.json()
+        tag_name = json["tag_name"]
+        pattern = r"v(?P<major>\d+).(?P<minor>\d+).(?P<patch>\d+)"
+        m = re.match(pattern, tag_name)
+        return tuple(map(int, (m.group('major'), m.group('minor'), m.group('patch'))))
+    else:
+        raise GithubException(response.text)
 
-def get_candidate_version():
-    latest = get_latest_version()
+def get_candidate_version(owner, repo):
+    latest = get_latest_version(owner, repo)
     return (latest[0], latest[1] + 1, latest[2])
 
 def create_new_branch(owner, repo, token, name):
@@ -64,14 +74,14 @@ def create_branch_from_master(owner, repo, new_branch):
     elif response.status_code == 422:
         print "Release branch already exists"
 
-def get_candidate_branch():
-    candidate = get_candidate_version()
+def get_candidate_branch(owner, repo):
+    candidate = get_candidate_version(owner, repo)
     candidate_str = ".".join([str(num) for num in candidate])
     candidate_branch = "{}-{}".format(RELEASE_BRANCH_PRE, candidate_str)
     return candidate_branch
 
-def get_release_tag():
-    candidate = get_candidate_version()
+def get_release_tag(owner, repo):
+    candidate = get_candidate_version(owner, repo)
     candidate_str = ".".join([str(num) for num in candidate])
     tag_name = "v{}".format(candidate_str)
     return tag_name
@@ -106,7 +116,7 @@ def accept_release_candidate(owner, repo, whatif):
     """
     Merge from release-x.x.x into master and tag master with vx.x.x
     """
-    candidate_branch = get_candidate_branch()
+    candidate_branch = get_candidate_branch(owner, repo)
     print "Merging candidate from '{}' to '{}'".format(candidate_branch, MASTER_BRANCH)
 
     # TODO: Some error mechanism, checking if the branch actually exists etc
@@ -124,7 +134,7 @@ def create_release_candidate(owner, repo, whatif):
     The next step is to create a pull request from develop to the new release branch.
     This branch should then be code reviewed and eventually merged.
     """
-    candidate_branch = get_candidate_branch()
+    candidate_branch = get_candidate_branch(owner, repo)
 
     print "Creating a new branch, '{}' from master".format(candidate_branch)
     if not whatif:
@@ -159,6 +169,15 @@ def create(ctx, owner, repo):
 def accept(ctx, owner, repo):
     print "Accepting the current release candidate"
     accept_release_candidate(owner, repo, ctx.obj['whatif'])
+
+@cli.command()
+@click.argument('owner')
+@click.argument('repo')
+@click.pass_context
+def latest(ctx, owner, repo):
+    latest = get_latest_version(owner, repo)
+    print "Latest version: {0}".format(latest)
+
 
 if __name__ == "__main__":
     cli(obj={})
