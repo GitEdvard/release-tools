@@ -112,17 +112,6 @@ def create_pull_request(owner, repo, head, base, title, body):
     else:
         print resp.status_code, resp.text
 
-def accept_release_candidate(owner, repo, whatif):
-    """
-    Merge from release-x.x.x into master and tag master with vx.x.x
-    """
-    candidate_branch = get_candidate_branch(owner, repo)
-    print "Merging candidate from '{}' to '{}'".format(candidate_branch, MASTER_BRANCH)
-
-    # TODO: Some error mechanism, checking if the branch actually exists etc
-    if not whatif:
-        merge(owner, repo, MASTER_BRANCH, candidate_branch, "Merging '{}' into '{}'".format(candidate_branch, MASTER_BRANCH))
-
 def create_release_candidate(owner, repo, whatif):
     """
     Pre: The master branch has a tagged latest version (TODO: Support if it hasn't)
@@ -144,6 +133,45 @@ def create_release_candidate(owner, repo, whatif):
     print "Merging from {} to {}".format(DEVELOP_BRANCH, candidate_branch)
     if not whatif:
         merge(owner, repo, candidate_branch, DEVELOP_BRANCH, "Merging '{}' into '{}'".format(DEVELOP_BRANCH, candidate_branch))
+
+def accept_release_candidate(owner, repo, whatif):
+    """
+    Merge from release-x.x.x into master and tag master with vx.x.x
+    """
+    candidate_branch = get_candidate_branch(owner, repo)
+    print "Merging candidate from '{}' to '{}'".format(candidate_branch, MASTER_BRANCH)
+
+    # TODO: Some error mechanism, checking if the branch actually exists etc
+    if not whatif:
+        merge(owner, repo, MASTER_BRANCH, candidate_branch, "Merging '{}' into '{}'".format(candidate_branch, MASTER_BRANCH))
+
+    tag_name = get_release_tag(owner, repo)
+    print "Tagging HEAD on {} as release {}".format(MASTER_BRANCH, tag_name)
+    if not whatif:
+        tag_release(owner, repo, tag_name, MASTER_BRANCH)
+
+def compare(owner, repo, base, head):
+    url = "https://api.github.com/repos/{}/{}/compare/{}...{}{}".format(owner, repo, base, head, access_token_postfix())
+    response = requests.get(url)
+    print response.status_code, response.json()
+
+def get_branches(owner, repo):
+    url = "https://api.github.com/repos/{}/{}/branches{}".format(owner, repo, access_token_postfix())
+    response = requests.get(url)
+    return response.json()
+
+def tag_release(owner, repo, tag_name, branch):
+    # Tags a commit as a release on Github
+    url = "https://api.github.com/repos/{}/{}/releases{}".format(owner, repo, access_token_postfix())
+    # TODO: Release description
+    json = {"tag_name": tag_name, "target_commitish": branch,
+            "name": tag_name, "body": "", "draft": False, "prerelease": False}
+    response = requests.post(url, json=json)
+    if response.status_code == 201:
+        print "HEAD of master marked as release {}".format(tag_name)
+    else:
+        raise GithubException(respones.text)
+
 
 @click.group()
 @click.option('--whatif/--not-whatif', default=False)
@@ -178,6 +206,32 @@ def latest(ctx, owner, repo):
     latest = get_latest_version(owner, repo)
     print "Latest version: {0}".format(latest)
 
+@cli.command()
+@click.argument('owner')
+@click.argument('repo')
+@click.pass_context
+def status(ctx, owner, repo):
+    latest = get_latest_version(owner, repo)
+    print "Latest version: {}".format(latest)
+
+    candidate_branch = get_candidate_branch(owner, repo)
+    print "Candidate branch based on latest version: {}".format(candidate_branch)
+
+    branches = get_branches(owner, repo)
+    branch_names = [branch["name"] for branch in branches]
+
+    print "Branches:"
+    for branch in branch_names:
+        print "  {}{}".format(branch, " *" if branch == candidate_branch else "")
+
+    # TODO:
+    # Differences between master and develop:
+    # print "Changes needed to be applied from 'develop'->'branch'"
+    # compare(owner, repo, MASTER_BRANCH, DEVELOP_BRANCH)
+
+    # Diff the candidate release with develop, there shouldn't be changes in the other direction
+
+    # Diff the candidate release with master
 
 if __name__ == "__main__":
     cli(obj={})
