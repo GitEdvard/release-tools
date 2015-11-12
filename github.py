@@ -123,9 +123,10 @@ def download_archive(owner, repo, branch, save_to_path, ball="zipball"):
               .format(owner=owner, repo=repo, archive_format=ball, ref=branch, token=access_token_postfix())
     response = requests.get(url)
     if response.status_code == 200:
-        print "Downloaded the {}".format(ball)
+        print "Downloaded the archive. Extracting..."
         archive = zipfile.ZipFile(StringIO.StringIO(response.content))
         archive.extractall(save_to_path)
+        print "Extracted"
 
 def create_release_candidate(owner, repo, whatif):
     """
@@ -155,8 +156,9 @@ def download_release_candidate(owner, repo, path, force, whatif):
     if not force and os.path.exists(full_path):
         print "There already exists a directory for the build at '{}'. Please specify a non-existing path or --force.".format(full_path)
         sys.exit(1)
-    print "Downloading '{}' to '{}'...".format(candidate_branch, full_path)
-    download_archive(owner, repo, candidate_branch, full_path)
+    print "Downloading and extracting '{}' to '{}'. This may take a few seconds...".format(candidate_branch, full_path)
+    if not whatif:
+        download_archive(owner, repo, candidate_branch, full_path)
 
 def accept_release_candidate(owner, repo, whatif):
     """
