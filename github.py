@@ -150,13 +150,13 @@ def create_release_candidate(owner, repo, whatif):
         merge(owner, repo, candidate_branch, DEVELOP_BRANCH, "Merging '{}' into '{}'".format(DEVELOP_BRANCH, candidate_branch))
 
 def download_release_candidate(owner, repo, path, force, whatif):
-    if not force and os.path.exists(path):
-        print "The candidate filepath '{}' already exists. Please specify a non-existing path or --force.".format(path)
-        sys.exit(1)
-
     candidate_branch = get_candidate_branch(owner, repo)
-    print "Downloading '{}' to '{}'...".format(candidate_branch, path)
-    download_archive(owner, repo, candidate_branch, path)
+    full_path = os.path.join(path, "candidates", candidate_branch)
+    if not force and os.path.exists(full_path):
+        print "There already exists a directory for the build at '{}'. Please specify a non-existing path or --force.".format(full_path)
+        sys.exit(1)
+    print "Downloading '{}' to '{}'...".format(candidate_branch, full_path)
+    download_archive(owner, repo, candidate_branch, full_path)
 
 def accept_release_candidate(owner, repo, whatif):
     """
