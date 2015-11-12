@@ -3,6 +3,10 @@ import requests
 import logging
 import click
 import re
+import zipfile
+import StringIO
+import os
+import sys
 
 # Assumes the following branch structure:
 #   - develop:        used for the latest version of the code
@@ -112,6 +116,17 @@ def create_pull_request(owner, repo, head, base, title, body):
     else:
         print resp.status_code, resp.text
 
+def download_archive(owner, repo, branch, save_to_path, ball="zipball"):
+    """Ball can be either zipball or tarball"""
+    # TODO: Test on Windows
+    url = "https://api.github.com/repos/{owner}/{repo}/{archive_format}/{ref}{token}"\
+              .format(owner=owner, repo=repo, archive_format=ball, ref=branch, token=access_token_postfix())
+    response = requests.get(url)
+    if response.status_code == 200:
+        print "Downloaded the {}".format(ball)
+        archive = zipfile.ZipFile(StringIO.StringIO(response.content))
+        archive.extractall(save_to_path)
+
 def create_release_candidate(owner, repo, whatif):
     """
     Pre: The master branch has a tagged latest version (TODO: Support if it hasn't)
@@ -133,6 +148,15 @@ def create_release_candidate(owner, repo, whatif):
     print "Merging from {} to {}".format(DEVELOP_BRANCH, candidate_branch)
     if not whatif:
         merge(owner, repo, candidate_branch, DEVELOP_BRANCH, "Merging '{}' into '{}'".format(DEVELOP_BRANCH, candidate_branch))
+
+def download_release_candidate(owner, repo, path, force, whatif):
+    if not force and os.path.exists(path):
+        print "The candidate filepath '{}' already exists. Please specify a non-existing path or --force.".format(path)
+        sys.exit(1)
+
+    candidate_branch = get_candidate_branch(owner, repo)
+    print "Downloading '{}' to '{}'...".format(candidate_branch, path)
+    download_archive(owner, repo, candidate_branch, path)
 
 def accept_release_candidate(owner, repo, whatif):
     """
@@ -172,7 +196,6 @@ def tag_release(owner, repo, tag_name, branch):
     else:
         raise GithubException(respones.text)
 
-
 @click.group()
 @click.option('--whatif/--not-whatif', default=False)
 @click.pass_context
@@ -182,7 +205,7 @@ def cli(ctx, whatif):
         print "*** Running with whatif ON - no writes ***"
     pass
 
-@cli.command()
+@cli.command('cand-create')
 @click.argument('owner')
 @click.argument('repo')
 @click.pass_context
@@ -190,13 +213,23 @@ def create(ctx, owner, repo):
     print "Creating a release candidate from {}".format(DEVELOP_BRANCH)
     create_release_candidate(owner, repo, ctx.obj['whatif'])
 
-@cli.command()
+@cli.command('cand-accept')
 @click.argument('owner')
 @click.argument('repo')
 @click.pass_context
 def accept(ctx, owner, repo):
     print "Accepting the current release candidate"
     accept_release_candidate(owner, repo, ctx.obj['whatif'])
+
+@cli.command('cand-download')
+@click.argument('owner')
+@click.argument('repo')
+@click.argument('path')
+@click.option('--force/--not-force', default=False)
+@click.pass_context
+def download(ctx, owner, repo, path, force):
+    print "Downloading the current release candidate"
+    download_release_candidate(owner, repo, path, force, ctx.obj['whatif'])
 
 @cli.command()
 @click.argument('owner')
@@ -235,14 +268,4 @@ def status(ctx, owner, repo):
 
 if __name__ == "__main__":
     cli(obj={})
-
-# Workflow:
-#  * The 'develop' seems ready for a release, decide create a candidate
-#  * Call 'program <create>', which branches a release branch and merges 'develop' into it
-#  * After the merge, the source for the candidate will be downloaded (to support manual building, make optional if there is a CI)
-#     * Build and validate the code
-#     * If additional feature need to be added from develop after this, repeat this command
-#       but this does not allow cherry picking, always take everything from develop
-#  * When the code has been validated, call 'program <accept>'.
-#     * This might be called automatically by a CI engine
 
