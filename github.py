@@ -280,14 +280,15 @@ def accept_release_candidate(owner, repo, force, whatif):
     release is in the queue.
     """
     queue = get_queue(owner, repo)
+    branch = queue[0]
 
     if len(queue) > 1:
         print "There are more than one item in the queue:"
-        for branch in queue:
-            print "  {}".format(branch)
+        for current in queue:
+            print "  {}".format(current)
 
         if not force:
-            print "The first branch will be accepted. Continue?"
+            print "The first branch '{}' will be accepted. Continue?".format(branch)
             accepted = raw_input("y/n> ")
 
             if accepted != "y":
@@ -296,17 +297,25 @@ def accept_release_candidate(owner, repo, force, whatif):
         else:
             print "Force set to true. The first branch will automatically be accepted"
 
-    branch = queue[0]
-    print "Merging from '{}' to '{}'".format(branch, MASTER_BRANCH)
+    def merge_cond(whatif, owner, repo, base, head):
+        msg = "Merging from '{}' to '{}'".format(head, base)
+        print msg
+        if not whatif:
+            merge(owner, repo, base, head, msg)
 
-    # TODO: Some error mechanism, checking if the branch actually exists etc
-    if not whatif:
-        merge(owner, repo, MASTER_BRANCH, branch, "Merging '{}' into '{}'".format(branch, MASTER_BRANCH))
+    merge_cond(whatif, owner, repo, MASTER_BRANCH, branch)
 
     tag_name = get_tag_from_branch(branch)
     print "Tagging HEAD on {} as release {}".format(MASTER_BRANCH, tag_name)
     if not whatif:
         tag_release(owner, repo, tag_name, MASTER_BRANCH)
+
+    if branch.startswith("hotfix"):
+        print "This is a hotfix branch. Merging changes to develop and release branches if applicable."
+        merge_cond(whatif, owner, repo, DEVELOP_BRANCH, branch)
+        if len(queue) > 0:
+            next_in_queue = queue[1]
+            merge_cond(whatif, owner, repo, next_in_queue, branch)
 
 def compare(owner, repo, base, head):
     url = "https://api.github.com/repos/{}/{}/compare/{}...{}{}".format(owner, repo, base, head, access_token_postfix())
