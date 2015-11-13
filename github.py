@@ -59,7 +59,6 @@ class Version(tuple):
     def from_string(s):
         return Version(map(int, s.split(".")))
 
-
 def get_version_from_tag(tag):
     pattern = r"v(?P<major>\d+).(?P<minor>\d+).(?P<patch>\d+)"
     m = re.match(pattern, tag)
@@ -153,7 +152,7 @@ def list_pull_requests(owner, repo):
     resp = requests.get(url)
     print resp.json()
 
-def create_pull_request(owner, repo, head, base, title, body):
+def create_pull_request(owner, repo, base, head, title, body):
     url = "https://api.github.com/repos/{}/{}/pulls{}".format(owner, repo, access_token_postfix())
     json = {"head": head, "base": base, "title": title, "body": body}
     resp = requests.post(url, json=json)
@@ -291,6 +290,7 @@ def accept_release_candidate(owner, repo, force, whatif):
         return
 
     branch = queue[0]
+    next_release = None
 
     if len(queue) > 1:
         print "There are more than one item in the queue:"
@@ -306,6 +306,8 @@ def accept_release_candidate(owner, repo, force, whatif):
                 return
         else:
             print "Force set to true. The first branch will automatically be accepted"
+
+        next_release = queue[1]
 
     def merge_cond(whatif, owner, repo, base, head):
         msg = "Merging from '{}' to '{}'".format(head, base)
@@ -328,12 +330,25 @@ def accept_release_candidate(owner, repo, force, whatif):
 
     if branch.startswith("hotfix"):
         # We don't know if the dev needs this in 'develop' and in the next release, but it's likely
-        # so we send a pull request to those. TODO: Don't accept if there is a pull request on a release branch
+        # so we send a pull request to those.
+        # TODO: Don't accept if there is a pull request on a release branch
         # TODO: Branch
-        print "This is a hotfix branch. "
+        # TODO: Does it work to create pull requests into both?
+        print "Hotfix branch merged - sending pull requests to develop and release"
+        print "These pull requests need to be reviewed and potential merge conflicts resolved"
+
+        msg = "Apply hotfix '{}' to '{}'".format(branch, DEVELOP_BRANCH)
+        body = "Pull request was made automatically by release-tools"
+        create_pull_request(owner, repo, DEVELOP_BRANCH, branch, msg, body)
+
+        if next_release:
+            msg = "Apply hotfix '{}' to '{}'".format(branch, next_release)
+            body = "Pull request was made automatically by release-tools"
+            create_pull_request(owner, repo, next_release, branch, msg, body)
 
 def compare(owner, repo, base, head):
-    url = "https://api.github.com/repos/{}/{}/compare/{}...{}{}".format(owner, repo, base, head, access_token_postfix())
+    url = "https://api.github.com/repos/{}/{}/compare/{}...{}{}"\
+          .format(owner, repo, base, head, access_token_postfix())
     response = requests.get(url)
     print response.status_code, response.json()
 
