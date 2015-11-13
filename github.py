@@ -11,11 +11,14 @@ import sys
 # Assumes the following branch structure:
 #   - develop:        used for the latest version of the code
 #   - release-#.#.#:  0-n release branches for candidates
+#   - hotfix-#.#.#:   0-n hotfix branches
 #   - master:         always contains the latest release, tagged with versions
+# Of these branches, there can be 0-1 active hotfix branch and 0-1 active release branch at a time
 
 MASTER_BRANCH = "master"
 DEVELOP_BRANCH = "develop"
 RELEASE_BRANCH_PRE = "release"
+HOTFIX_BRANCH_PRE = "hotfix"
 
 def get_access_token():
     with open('token.secret') as f:
@@ -30,24 +33,52 @@ access_token = get_access_token()
 class GithubException(Exception):
     pass
 
+class WorkflowException(Exception):
+    pass
+
+class Version(tuple):
+    def __repr__(self):
+        return ".".join([str(num) for num in self])
+
+    def _make_delta(self, *delta):
+        return Version([self[0] + delta[0], self[1] + delta[1], self[2] + delta[2]])
+
+    def inc_major(self):
+        return self._make_delta(1, 0, 0)
+
+    def inc_minor(self):
+        return self._make_delta(0, 1, 0)
+
+    def inc_patch(self):
+        return self._make_delta(0, 0, 1)
+
+    @staticmethod
+    def from_string(s):
+        return Version(map(int, s.split(".")))
+
+
+def get_version_from_tag(tag):
+    pattern = r"v(?P<major>\d+).(?P<minor>\d+).(?P<patch>\d+)"
+    m = re.match(pattern, tag)
+    return Version(map(int, (m.group('major'), m.group('minor'), m.group('patch'))))
+
 def get_latest_version(owner, repo):
     url = "https://api.github.com/repos/{}/{}/releases/latest{}".format(owner, repo, access_token_postfix())
     response = requests.get(url)
     if response.status_code == 200:
         json = response.json()
         tag_name = json["tag_name"]
-        pattern = r"v(?P<major>\d+).(?P<minor>\d+).(?P<patch>\d+)"
-        m = re.match(pattern, tag_name)
-        return tuple(map(int, (m.group('major'), m.group('minor'), m.group('patch'))))
+        return get_version_from_tag(tag_name)
     else:
         raise GithubException(response.text)
 
 def get_candidate_version(owner, repo):
     latest = get_latest_version(owner, repo)
-    return (latest[0], latest[1] + 1, latest[2])
+    return latest.inc_minor()
 
-def create_new_branch(owner, repo, token, name):
-    pass
+def get_hotfix_version(owner, repo):
+    latest = get_latest_version(owner, repo)
+    return latest.inc_patch()
 
 def get_refs_heads(owner, repo):
     access_token = get_access_token()
@@ -74,20 +105,30 @@ def create_branch_from_master(owner, repo, new_branch):
     response = requests.post(url, json=body)
 
     if response.status_code == 201:
-        print "Release branch successfully created"
+        print "Branch successfully created"
     elif response.status_code == 422:
-        print "Release branch already exists"
+        print "Branch already exists"  # TODO: Check error code def in docs
 
 def get_candidate_branch(owner, repo):
-    candidate = get_candidate_version(owner, repo)
-    candidate_str = ".".join([str(num) for num in candidate])
-    candidate_branch = "{}-{}".format(RELEASE_BRANCH_PRE, candidate_str)
-    return candidate_branch
+    version = get_candidate_version(owner, repo)
+    return get_branch_name_from_version(version, RELEASE_BRANCH_PRE)
 
-def get_release_tag(owner, repo):
-    candidate = get_candidate_version(owner, repo)
-    candidate_str = ".".join([str(num) for num in candidate])
-    tag_name = "v{}".format(candidate_str)
+def get_branch_name_from_version(version, prefix):
+    """Given a version tuple, returns a valid branch name"""
+    return "{}-{}".format(prefix, version)
+
+def get_hotfix_branch(owner, repo):
+    version = get_hotfix_version(owner, repo)
+    return get_branch_name_from_version(version, HOTFIX_BRANCH_PRE)
+
+def get_tag_from_branch(branch_name):
+    """
+    Returns the tag we use for tagging the release. Base it on the
+    branch name to avoid errors
+    """
+    # This is kinda ugly
+    tag_name = branch_name.replace(RELEASE_BRANCH_PRE + "-", "v")
+    tag_name = tag_name.replace(HOTFIX_BRANCH_PRE + "-", "v")
     return tag_name
 
 def merge(owner, repo, base, head, commit_message):
@@ -150,6 +191,20 @@ def create_release_candidate(owner, repo, whatif):
     if not whatif:
         merge(owner, repo, candidate_branch, DEVELOP_BRANCH, "Merging '{}' into '{}'".format(DEVELOP_BRANCH, candidate_branch))
 
+def create_hotfix(owner, repo, whatif):
+    """
+    Creates a hotfix branched off the master.
+
+    Hotfix branches are treated similar to release branches, except the patch number
+    has been increased instead and they are before the release in the deployment pipeline.
+    """
+    hotfix_branch = get_hotfix_branch(owner, repo)
+    print "Creating a new hotfix branch, '{}' from master".format(hotfix_branch)
+    if not whatif:
+        create_branch_from_master(owner, repo, hotfix_branch)
+
+    print "Not merging automatically into a hotfix - hotfix patches should be sent as pull requests to it"
+
 def download_release_candidate(owner, repo, path, force, whatif):
     candidate_branch = get_candidate_branch(owner, repo)
     full_path = os.path.join(path, "candidates", candidate_branch)
@@ -160,18 +215,91 @@ def download_release_candidate(owner, repo, path, force, whatif):
     if not whatif:
         download_archive(owner, repo, candidate_branch, full_path)
 
-def accept_release_candidate(owner, repo, whatif):
+
+def get_hotfix_branches(branch_names):
+    """Returns the version numbers for all hotfix branches defined"""
+    for branch_name in branch_names:
+        if branch_name.startswith(HOTFIX_BRANCH_PRE):
+            yield branch_name
+
+def get_release_branches(branch_names):
+    """Returns the version numbers for all hotfix branches defined"""
+    for branch_name in branch_names:
+        if branch_name.startswith(RELEASE_BRANCH_PRE):
+            yield branch_name
+
+def get_pending_hotfix_branches(current_version, branch_names):
+    for branch in get_hotfix_branches(branch_names):
+        branch_version = Version.from_string(branch.split("-")[1])
+        if branch_version[0] == current_version[0] and \
+           branch_version[1] == current_version[1] and \
+           branch_version[2] > current_version[2]:
+            yield branch
+
+def get_pending_release_branches(current_tag, branch_names):
+    for branch in get_release_branches(branch_names):
+        branch_version = Version.from_string(branch.split("-")[1])
+        if branch_version[0] > current_tag[0] or \
+           branch_version[1] > current_tag[1]:
+            yield branch
+
+def get_queue(owner, repo):
     """
+    Returns the queue. The queue can only exist of 0..1 release branches
+    and 0..1 hotfix branches.
+
+    The hotfix branch will always come before the release branch
+    """
+    branches = get_branches(owner, repo)
+    branch_names = [branch["name"] for branch in branches]
+    current_version = get_latest_version(owner, repo)
+
+    pending_hotfixes = list(get_pending_hotfix_branches(current_version, branch_names))
+    pending_releases = list(get_pending_release_branches(current_version, branch_names))
+
+    if len(pending_hotfixes) > 1:
+        raise WorkflowException("Unexpected number of pending hotfixes: {}".format(len(pending_hotfixes)))
+
+    if len(pending_releases) > 1:
+        raise WorkflowException("Unexpected number of pending releases: {}".format(len(pending_releases)))
+
+    queue = pending_hotfixes + pending_releases
+    return queue
+
+def accept_release_candidate(owner, repo, force, whatif):
+    """
+    Accept the next item in the queue
+
     Merge from release-x.x.x into master and tag master with vx.x.x
+
+    If force is not set to True, the user will be prompted if more than one
+    release is in the queue.
     """
-    candidate_branch = get_candidate_branch(owner, repo)
-    print "Merging candidate from '{}' to '{}'".format(candidate_branch, MASTER_BRANCH)
+    queue = get_queue(owner, repo)
+
+    if len(queue) > 1:
+        print "There are more than one item in the queue:"
+        for branch in queue:
+            print "  {}".format(branch)
+
+        if not force:
+            print "The first branch will be accepted. Continue?"
+            accepted = raw_input("y/n> ")
+
+            if accepted != "y":
+                print "Action cancelled by user"
+                return
+        else:
+            print "Force set to true. The first branch will automatically be accepted"
+
+    branch = queue[0]
+    print "Merging from '{}' to '{}'".format(branch, MASTER_BRANCH)
 
     # TODO: Some error mechanism, checking if the branch actually exists etc
     if not whatif:
-        merge(owner, repo, MASTER_BRANCH, candidate_branch, "Merging '{}' into '{}'".format(candidate_branch, MASTER_BRANCH))
+        merge(owner, repo, MASTER_BRANCH, branch, "Merging '{}' into '{}'".format(branch, MASTER_BRANCH))
 
-    tag_name = get_release_tag(owner, repo)
+    tag_name = get_tag_from_branch(branch)
     print "Tagging HEAD on {} as release {}".format(MASTER_BRANCH, tag_name)
     if not whatif:
         tag_release(owner, repo, tag_name, MASTER_BRANCH)
@@ -207,7 +335,7 @@ def cli(ctx, whatif):
         print "*** Running with whatif ON - no writes ***"
     pass
 
-@cli.command('cand-create')
+@cli.command('create-cand')
 @click.argument('owner')
 @click.argument('repo')
 @click.pass_context
@@ -215,15 +343,24 @@ def create(ctx, owner, repo):
     print "Creating a release candidate from {}".format(DEVELOP_BRANCH)
     create_release_candidate(owner, repo, ctx.obj['whatif'])
 
-@cli.command('cand-accept')
+@cli.command('create-hotfix')
 @click.argument('owner')
 @click.argument('repo')
 @click.pass_context
-def accept(ctx, owner, repo):
-    print "Accepting the current release candidate"
-    accept_release_candidate(owner, repo, ctx.obj['whatif'])
+def create(ctx, owner, repo):
+    print "Creating a hotfix branch"
+    create_hotfix(owner, repo, ctx.obj['whatif'])
 
-@cli.command('cand-download')
+@cli.command('accept')
+@click.argument('owner')
+@click.argument('repo')
+@click.option('--force/--not-force', default=False)
+@click.pass_context
+def accept(ctx, owner, repo, force):
+    print "Accepting the current release candidate"
+    accept_release_candidate(owner, repo, force, ctx.obj['whatif'])
+
+@cli.command('download')
 @click.argument('owner')
 @click.argument('repo')
 @click.argument('path')
@@ -246,27 +383,31 @@ def latest(ctx, owner, repo):
 @click.argument('repo')
 @click.pass_context
 def status(ctx, owner, repo):
-    latest = get_latest_version(owner, repo)
-    print "Latest version: {}".format(latest)
-
-    candidate_branch = get_candidate_branch(owner, repo)
-    print "Candidate branch based on latest version: {}".format(candidate_branch)
-
     branches = get_branches(owner, repo)
     branch_names = [branch["name"] for branch in branches]
 
+    queue = get_queue(owner, repo)
+
+    latest = get_latest_version(owner, repo)
+    print "Latest version: {}".format(latest)
+
+    # TODO: Report all release tags too
+
+    candidate_branch = get_candidate_branch(owner, repo)
+    hotfix_branch = get_hotfix_branch(owner, repo)
+
+    print ""
     print "Branches:"
     for branch in branch_names:
-        print "  {}{}".format(branch, " *" if branch == candidate_branch else "")
+        print "  {}{}".format(branch, " *" if (branch in queue) else "")
 
-    # TODO:
-    # Differences between master and develop:
-    # print "Changes needed to be applied from 'develop'->'branch'"
-    # compare(owner, repo, MASTER_BRANCH, DEVELOP_BRANCH)
+    print ""
+    print "Queue:"
+    # TODO: Use cache for api calls when possible
+    for branch in queue:
+        print "  {}".format(branch)
 
-    # Diff the candidate release with develop, there shouldn't be changes in the other direction
-
-    # Diff the candidate release with master
+    # TODO: Compare relevant branches
 
 if __name__ == "__main__":
     cli(obj={})
