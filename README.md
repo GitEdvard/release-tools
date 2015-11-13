@@ -8,6 +8,7 @@ Python tools for handling versioned releases. Currently only handles releases us
 of this tool or if release/hotfix branches are made manually.*
 
 **Assumptions**
+
 The release workflow supported assumes that you've got two permanent branches:
   * ``develop``: The next version to be released. Nothing should be committed in here that cannot safely go
   out with the next scheduled release
@@ -20,10 +21,11 @@ The following transient branches also exist:
   the other branches
 
 **Workflows**
+
 General flow:
   * Code has been submitted to the ``develop`` branch, probably through pull requests from feature branches
   * When the next version is ready to be released, run ``github.py create-cand <owner> <repo>``
-  * This creates a new release branch called release-#.#.#, where the minor version has been increased.
+  * This creates a new release branch called ``release-#.#.#``, where the minor version has been increased.
   * Build and validate (separate workflow). Latest version can be fetched through
   ``github.py download <owner> <repo>``. Deploy if validated.
   * After deploying, call ``github.py accept <owner> <repo>``. If the queue also contains a hotfix, you
@@ -43,3 +45,4 @@ Release queue:
   * Using these workflows, there can only be one hotfix version and one release version out at the same time.
   * The hotfix will always be next in the queue. Hotfixes are always marked by an increased patch number. 
   That may not always be in accordance with semantic versioning, but currently that's the only scheme supported. 
+
