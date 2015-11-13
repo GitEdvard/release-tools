@@ -205,16 +205,20 @@ def create_hotfix(owner, repo, whatif):
 
     print "Not merging automatically into a hotfix - hotfix patches should be sent as pull requests to it"
 
-def download_release_candidate(owner, repo, path, force, whatif):
-    candidate_branch = get_candidate_branch(owner, repo)
-    full_path = os.path.join(path, "candidates", candidate_branch)
+def download_next_in_queue(owner, repo, path, force, whatif):
+    queue = get_queue(owner, repo)
+    if len(queue) > 1:
+        print "There are more than one items in the queue. Downloading the first item."
+
+    branch = queue[0]
+
+    full_path = os.path.join(path, branch)
     if not force and os.path.exists(full_path):
         print "There already exists a directory for the build at '{}'. Please specify a non-existing path or --force.".format(full_path)
         sys.exit(1)
-    print "Downloading and extracting '{}' to '{}'. This may take a few seconds...".format(candidate_branch, full_path)
+    print "Downloading and extracting '{}' to '{}'. This may take a few seconds...".format(branch, full_path)
     if not whatif:
-        download_archive(owner, repo, candidate_branch, full_path)
-
+        download_archive(owner, repo, branch, full_path)
 
 def get_hotfix_branches(branch_names):
     """Returns the version numbers for all hotfix branches defined"""
@@ -367,8 +371,8 @@ def accept(ctx, owner, repo, force):
 @click.option('--force/--not-force', default=False)
 @click.pass_context
 def download(ctx, owner, repo, path, force):
-    print "Downloading the current release candidate"
-    download_release_candidate(owner, repo, path, force, ctx.obj['whatif'])
+    print "Downloading the next release in the queue"
+    download_next_in_queue(owner, repo, path, force, ctx.obj['whatif'])
 
 @cli.command()
 @click.argument('owner')
