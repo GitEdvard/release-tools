@@ -33,6 +33,9 @@ access_token = get_access_token()
 class GithubException(Exception):
     pass
 
+class MergeException(Exception):
+    pass
+
 class WorkflowException(Exception):
     pass
 
@@ -139,6 +142,8 @@ def merge(owner, repo, base, head, commit_message):
         print "Successfully merged '{}' into '{}'".format(head, base)
     elif response.status_code == 204:
         print "Nothing to merge"
+    elif response.status_code == 409:
+        raise MergeException(response.text)
     else:
         msg = "Unexpected result code from Github ({}): {}".format(response.status_code, response.text)
         raise GithubException(msg)
@@ -280,6 +285,11 @@ def accept_release_candidate(owner, repo, force, whatif):
     release is in the queue.
     """
     queue = get_queue(owner, repo)
+
+    if len(queue) == 0:
+        print "The queue is empty. Nothing to accept."
+        return
+
     branch = queue[0]
 
     if len(queue) > 1:
@@ -301,7 +311,13 @@ def accept_release_candidate(owner, repo, force, whatif):
         msg = "Merging from '{}' to '{}'".format(head, base)
         print msg
         if not whatif:
-            merge(owner, repo, base, head, msg)
+            try:
+                merge(owner, repo, base, head, msg)
+            except MergeException:
+                print "Merge exception while merging '{}' to '{}'. " + \
+                      "This can happen if there was a hotfix release in between."\
+                      .format(head, base)
+                sys.exit(1)
 
     merge_cond(whatif, owner, repo, MASTER_BRANCH, branch)
 
@@ -311,11 +327,10 @@ def accept_release_candidate(owner, repo, force, whatif):
         tag_release(owner, repo, tag_name, MASTER_BRANCH)
 
     if branch.startswith("hotfix"):
-        print "This is a hotfix branch. Merging changes to develop and release branches if applicable."
-        merge_cond(whatif, owner, repo, DEVELOP_BRANCH, branch)
-        if len(queue) > 0:
-            next_in_queue = queue[1]
-            merge_cond(whatif, owner, repo, next_in_queue, branch)
+        # We don't know if the dev needs this in 'develop' and in the next release, but it's likely
+        # so we send a pull request to those. TODO: Don't accept if there is a pull request on a release branch
+        # TODO: Branch
+        print "This is a hotfix branch. "
 
 def compare(owner, repo, base, head):
     url = "https://api.github.com/repos/{}/{}/compare/{}...{}{}".format(owner, repo, base, head, access_token_postfix())
@@ -421,6 +436,7 @@ def status(ctx, owner, repo):
         print "  {}".format(branch)
 
     # TODO: Compare relevant branches
+    print ""
 
 if __name__ == "__main__":
     cli(obj={})
