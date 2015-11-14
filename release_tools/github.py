@@ -44,6 +44,10 @@ class WorkflowException(Exception):
     pass
 
 class Version(tuple):
+    """
+    Represents a version as a (major, minor, patch)
+    tuple, with methods to alter it conveniently
+    """
     def __repr__(self):
         return ".".join([str(num) for num in self])
 
@@ -79,12 +83,10 @@ def get_latest_version(owner, repo):
         raise GithubException(response.text)
 
 def get_candidate_version(owner, repo):
-    latest = get_latest_version(owner, repo)
-    return latest.inc_minor()
+    return get_latest_version(owner, repo).inc_minor()
 
 def get_hotfix_version(owner, repo):
-    latest = get_latest_version(owner, repo)
-    return latest.inc_patch()
+    return get_latest_version(owner, repo).inc_patch()
 
 def get_refs_heads(owner, repo):
     access_token = get_access_token()
