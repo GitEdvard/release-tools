@@ -453,6 +453,9 @@ def status(ctx, owner, repo):
     # TODO: Compare relevant branches
     print ""
 
-if __name__ == "__main__":
+def cli_main():
     cli(obj={})
+
+if __name__ == "__main__":
+    cli_main()
 
