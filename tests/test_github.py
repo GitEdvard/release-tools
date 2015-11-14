@@ -22,8 +22,8 @@ class TestVersioning(unittest.TestCase):
 
     def test_get_correct_version_from_tag(self):
         tag = "v1.2.3"
-        from release_tools.github import get_version_from_tag
-        version = get_version_from_tag(tag)
+        from release_tools.github import Conventions 
+        version = Conventions.get_version_from_tag(tag)
         self.assertEqual(version, (1, 2, 3))
 
 class TestWorkflow(unittest.TestCase):

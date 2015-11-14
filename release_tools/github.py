@@ -67,313 +67,348 @@ class Version(tuple):
     def from_string(s):
         return Version(map(int, s.split(".")))
 
-def get_version_from_tag(tag):
-    pattern = r"v(?P<major>\d+).(?P<minor>\d+).(?P<patch>\d+)"
-    m = re.match(pattern, tag)
-    return Version(map(int, (m.group('major'), m.group('minor'), m.group('patch'))))
-
-def get_latest_version(owner, repo):
-    url = "https://api.github.com/repos/{}/{}/releases/latest{}".format(owner, repo, access_token_postfix())
-    response = requests.get(url)
-    if response.status_code == 200:
-        json = response.json()
-        tag_name = json["tag_name"]
-        return get_version_from_tag(tag_name)
-    else:
-        raise GithubException(response.text)
-
-def get_candidate_version(owner, repo):
-    return get_latest_version(owner, repo).inc_minor()
-
-def get_hotfix_version(owner, repo):
-    return get_latest_version(owner, repo).inc_patch()
-
-def get_refs_heads(owner, repo):
-    access_token = get_access_token()
-    url = "https://api.github.com/repos/{}/{}/git/refs/heads?access_token={}".format(owner, repo, access_token)
-    response = requests.get(url)
-    return response.json()
-
-def get_refs_head(owner, repo, ref):
-    heads = get_refs_heads(owner, repo)
-    filtered = [x for x in heads if x["ref"] == ref]
-    assert len(filtered) == 1
-    return filtered[0]["object"]["sha"]
-
-def create_branch_from_master(owner, repo, new_branch):
+class Conventions:
     """
-    Creates a new branch from the master branch
-
-    If the branch already exists, it will be ignored without an exception
+    Defines naming conventions between versions, tags and branches.
     """
-    sha = get_refs_head(owner, repo, "refs/heads/master")
+    @staticmethod
+    def get_version_from_tag(tag):
+        pattern = r"v(?P<major>\d+).(?P<minor>\d+).(?P<patch>\d+)"
+        m = re.match(pattern, tag)
+        return Version(map(int, (m.group('major'), m.group('minor'), m.group('patch'))))
 
-    body = {"ref": "refs/heads/{}".format(new_branch), "sha": sha}
-    url = "https://api.github.com/repos/{}/{}/git/refs{}".format(owner, repo, access_token_postfix())
-    response = requests.post(url, json=body)
+    @staticmethod
+    def get_branch_name_from_version(version, prefix):
+        """Given a version tuple, returns a valid branch name"""
+        return "{}-{}".format(prefix, version)
 
-    if response.status_code == 201:
-        print "Branch successfully created"
-    elif response.status_code == 422:
-        print "Branch already exists"  # TODO: Check error code def in docs
+    @staticmethod
+    def get_tag_from_branch(branch_name):
+        """
+        Returns the tag we use for tagging the release. Base it on the
+        branch name to avoid errors
+        """
+        # This is kinda ugly
+        tag_name = branch_name.replace(RELEASE_BRANCH_PRE + "-", "v")
+        tag_name = tag_name.replace(HOTFIX_BRANCH_PRE + "-", "v")
+        return tag_name
 
-def get_candidate_branch(owner, repo):
-    version = get_candidate_version(owner, repo)
-    return get_branch_name_from_version(version, RELEASE_BRANCH_PRE)
+class GithubProvider():
+    def __init__(self, owner, repo):
+        self.owner = owner
+        self.repo = repo
 
-def get_branch_name_from_version(version, prefix):
-    """Given a version tuple, returns a valid branch name"""
-    return "{}-{}".format(prefix, version)
-
-def get_hotfix_branch(owner, repo):
-    version = get_hotfix_version(owner, repo)
-    return get_branch_name_from_version(version, HOTFIX_BRANCH_PRE)
-
-def get_tag_from_branch(branch_name):
-    """
-    Returns the tag we use for tagging the release. Base it on the
-    branch name to avoid errors
-    """
-    # This is kinda ugly
-    tag_name = branch_name.replace(RELEASE_BRANCH_PRE + "-", "v")
-    tag_name = tag_name.replace(HOTFIX_BRANCH_PRE + "-", "v")
-    return tag_name
-
-def merge(owner, repo, base, head, commit_message):
-    url = "https://api.github.com/repos/{}/{}/merges{}".format(owner, repo, access_token_postfix())
-    json = {"base": base, "head": head, "commit_message": commit_message}
-    response = requests.post(url, json=json)
-    if response.status_code == 201:
-        print "Successfully merged '{}' into '{}'".format(head, base)
-    elif response.status_code == 204:
-        print "Nothing to merge"
-    elif response.status_code == 409:
-        raise MergeException(response.text)
-    else:
-        msg = "Unexpected result code from Github ({}): {}".format(response.status_code, response.text)
-        raise GithubException(msg)
-
-def list_pull_requests(owner, repo):
-    url = "https://api.github.com/repos/{}/{}/pulls{}".format(owner, repo, access_token_postfix())
-    resp = requests.get(url)
-    print resp.json()
-
-def create_pull_request(owner, repo, base, head, title, body):
-    url = "https://api.github.com/repos/{}/{}/pulls{}".format(owner, repo, access_token_postfix())
-    json = {"head": head, "base": base, "title": title, "body": body}
-    resp = requests.post(url, json=json)
-    if resp.status_code == 201:
-        print "A pull request has been created from '{}' to '{}'".format(head, base)
-    else:
-        print resp.status_code, resp.text
-
-def download_archive(owner, repo, branch, save_to_path, ball="zipball"):
-    """Ball can be either zipball or tarball"""
-    # TODO: Test on Windows
-    url = "https://api.github.com/repos/{owner}/{repo}/{archive_format}/{ref}{token}"\
-              .format(owner=owner, repo=repo, archive_format=ball, ref=branch, token=access_token_postfix())
-    response = requests.get(url)
-    if response.status_code == 200:
-        print "Downloaded the archive. Extracting..."
-        archive = zipfile.ZipFile(StringIO.StringIO(response.content))
-        archive.extractall(save_to_path)
-        print "Extracted"
-
-def create_release_candidate(owner, repo, whatif):
-    """
-    Pre: The master branch has a tagged latest version (TODO: Support if it hasn't)
-
-    The candidate release is based on info from Github about the latest release. For
-    this, there should be a new branch, called release-#.#.#. If such a branch already
-    exists, no new branch is created.
-
-    The next step is to create a pull request from develop to the new release branch.
-    This branch should then be code reviewed and eventually merged.
-    """
-    candidate_branch = get_candidate_branch(owner, repo)
-
-    print "Creating a new branch, '{}' from master".format(candidate_branch)
-    if not whatif:
-        create_branch_from_master(owner, repo, candidate_branch)
-
-    # Merge from 'develop' into the new release branch:
-    print "Merging from {} to {}".format(DEVELOP_BRANCH, candidate_branch)
-    if not whatif:
-        merge(owner, repo, candidate_branch, DEVELOP_BRANCH, "Merging '{}' into '{}'".format(DEVELOP_BRANCH, candidate_branch))
-
-def create_hotfix(owner, repo, whatif):
-    """
-    Creates a hotfix branched off the master.
-
-    Hotfix branches are treated similar to release branches, except the patch number
-    has been increased instead and they are before the release in the deployment pipeline.
-    """
-    hotfix_branch = get_hotfix_branch(owner, repo)
-    print "Creating a new hotfix branch, '{}' from master".format(hotfix_branch)
-    if not whatif:
-        create_branch_from_master(owner, repo, hotfix_branch)
-
-    print "Not merging automatically into a hotfix - hotfix patches should be sent as pull requests to it"
-
-def download_next_in_queue(owner, repo, path, force, whatif):
-    queue = get_queue(owner, repo)
-    if len(queue) > 1:
-        print "There are more than one items in the queue. Downloading the first item."
-
-    branch = queue[0]
-
-    full_path = os.path.join(path, branch)
-    if not force and os.path.exists(full_path):
-        print "There already exists a directory for the build at '{}'. Please specify a non-existing path or --force.".format(full_path)
-        sys.exit(1)
-    print "Downloading and extracting '{}' to '{}'. This may take a few seconds...".format(branch, full_path)
-    if not whatif:
-        download_archive(owner, repo, branch, full_path)
-
-def get_hotfix_branches(branch_names):
-    """Returns the version numbers for all hotfix branches defined"""
-    for branch_name in branch_names:
-        if branch_name.startswith(HOTFIX_BRANCH_PRE):
-            yield branch_name
-
-def get_release_branches(branch_names):
-    """Returns the version numbers for all hotfix branches defined"""
-    for branch_name in branch_names:
-        if branch_name.startswith(RELEASE_BRANCH_PRE):
-            yield branch_name
-
-def get_pending_hotfix_branches(current_version, branch_names):
-    for branch in get_hotfix_branches(branch_names):
-        branch_version = Version.from_string(branch.split("-")[1])
-        if branch_version[0] == current_version[0] and \
-           branch_version[1] == current_version[1] and \
-           branch_version[2] > current_version[2]:
-            yield branch
-
-def get_pending_release_branches(current_tag, branch_names):
-    for branch in get_release_branches(branch_names):
-        branch_version = Version.from_string(branch.split("-")[1])
-        if branch_version[0] > current_tag[0] or \
-           branch_version[1] > current_tag[1]:
-            yield branch
-
-def get_queue(owner, repo):
-    """
-    Returns the queue. The queue can only exist of 0..1 release branches
-    and 0..1 hotfix branches.
-
-    The hotfix branch will always come before the release branch
-    """
-    branches = get_branches(owner, repo)
-    branch_names = [branch["name"] for branch in branches]
-    current_version = get_latest_version(owner, repo)
-
-    pending_hotfixes = list(get_pending_hotfix_branches(current_version, branch_names))
-    pending_releases = list(get_pending_release_branches(current_version, branch_names))
-
-    if len(pending_hotfixes) > 1:
-        raise WorkflowException("Unexpected number of pending hotfixes: {}".format(len(pending_hotfixes)))
-
-    if len(pending_releases) > 1:
-        raise WorkflowException("Unexpected number of pending releases: {}".format(len(pending_releases)))
-
-    queue = pending_hotfixes + pending_releases
-    return queue
-
-def accept_release_candidate(owner, repo, force, whatif):
-    """
-    Accept the next item in the queue
-
-    Merge from release-x.x.x into master and tag master with vx.x.x
-
-    If force is not set to True, the user will be prompted if more than one
-    release is in the queue.
-    """
-    queue = get_queue(owner, repo)
-
-    if len(queue) == 0:
-        print "The queue is empty. Nothing to accept."
-        return
-
-    branch = queue[0]
-    next_release = None
-
-    if len(queue) > 1:
-        print "There are more than one item in the queue:"
-        for current in queue:
-            print "  {}".format(current)
-
-        if not force:
-            print "The first branch '{}' will be accepted. Continue?".format(branch)
-            accepted = raw_input("y/n> ")
-
-            if accepted != "y":
-                print "Action cancelled by user"
-                return
+    def get_latest_version_tag_name(self):
+        url = "https://api.github.com/repos/{}/{}/releases/latest{}"\
+                  .format(self.owner, self.repo, access_token_postfix())
+        response = requests.get(url)
+        if response.status_code == 200:
+            json = response.json()
+            return json["tag_name"]
         else:
-            print "Force set to true. The first branch will automatically be accepted"
+            raise GithubException(response.text)
 
-        next_release = queue[1]
+    def get_refs_heads(self):
+        access_token = get_access_token()
+        url = "https://api.github.com/repos/{}/{}/git/refs/heads?access_token={}"
+                  .format(owner, repo, access_token)
+        response = requests.get(url)
+        return response.json()
 
-    def merge_cond(whatif, owner, repo, base, head):
-        msg = "Merging from '{}' to '{}'".format(head, base)
-        print msg
+    def get_refs_head(self, ref):
+        heads = self.get_refs_heads(owner, repo)
+        filtered = [x for x in heads if x["ref"] == ref]
+        assert len(filtered) == 1
+        return filtered[0]["object"]["sha"]
+
+    def create_branch_from_master(self, new_branch):
+        """
+        Creates a new branch from the master branch
+
+        If the branch already exists, it will be ignored without an exception
+        """
+        sha = get_refs_head(self.owner, self.repo, "refs/heads/master")
+
+        body = {"ref": "refs/heads/{}".format(new_branch), "sha": sha}
+        url = "https://api.github.com/repos/{}/{}/git/refs{}"
+                  .format(owner, repo, access_token_postfix())
+        response = requests.post(url, json=body)
+
+        if response.status_code == 201:
+            print "Branch successfully created"
+        elif response.status_code == 422:
+            print "Branch already exists"  # TODO: Check error code def in docs
+
+    def merge(self, base, head, commit_message):
+        url = "https://api.github.com/repos/{}/{}/merges{}"
+                  .format(owner, repo, access_token_postfix())
+        json = {"base": base, "head": head, "commit_message": commit_message}
+        response = requests.post(url, json=json)
+        if response.status_code == 201:
+            print "Successfully merged '{}' into '{}'".format(head, base)
+        elif response.status_code == 204:
+            print "Nothing to merge"
+        elif response.status_code == 409:
+            raise MergeException(response.text)
+        else:
+            msg = "Unexpected result code from Github ({}): {}".format(response.status_code, response.text)
+            raise GithubException(msg)
+
+    def list_pull_requests(self):
+        url = "https://api.github.com/repos/{}/{}/pulls{}"
+                  .format(self.owner, self.repo, access_token_postfix())
+        resp = requests.get(url)
+        print resp.json()
+
+    def create_pull_request(self, base, head, title, body):
+        url = "https://api.github.com/repos/{}/{}/pulls{}"
+                  .format(self.owner, self.repo, access_token_postfix())
+        json = {"head": head, "base": base, "title": title, "body": body}
+        resp = requests.post(url, json=json)
+        if resp.status_code == 201:
+            print "A pull request has been created from '{}' to '{}'".format(head, base)
+        else:
+            print resp.status_code, resp.text
+
+    def download_archive(self, branch, save_to_path, ball="zipball"):
+        """Ball can be either zipball or tarball"""
+        # TODO: Test on Windows
+        url = "https://api.github.com/repos/{owner}/{repo}/{archive_format}/{ref}{token}"\
+                  .format(owner=self.owner, repo=self.repo, archive_format=ball, ref=branch, token=access_token_postfix())
+        response = requests.get(url)
+        if response.status_code == 200:
+            print "Downloaded the archive. Extracting..."
+            archive = zipfile.ZipFile(StringIO.StringIO(response.content))
+            archive.extractall(save_to_path)
+            print "Extracted"
+
+    def get_branches(self):
+        url = "https://api.github.com/repos/{}/{}/branches{}"\
+                  .format(self.owner, self.repo, access_token_postfix())
+        response = requests.get(url)
+        return response.json()
+
+    def tag_release(self, tag_name, branch):
+        # Tags a commit as a release on Github
+        url = "https://api.github.com/repos/{}/{}/releases{}"
+                  .format(self.owner, self.repo, access_token_postfix())
+        # TODO: Release description
+        json = {"tag_name": tag_name, "target_commitish": branch,
+                "name": tag_name, "body": "", "draft": False, "prerelease": False}
+        response = requests.post(url, json=json)
+        if response.status_code == 201:
+            print "HEAD of master marked as release {}".format(tag_name)
+        else:
+            raise GithubException(respones.text)
+
+    """
+    def compare(self, base, head):
+        url = "https://api.github.com/repos/{}/{}/compare/{}...{}{}"\
+              .format(self.owner, self.repo, base, head, access_token_postfix())
+        response = requests.get(url)
+        print response.status_code, response.json()
+    """
+
+class Workflow:
+    """
+    Methods that have to do directly with the deployment workflow
+    but who could work with different providers that look like the GithubProvider
+    """
+    def __init__(self, provider):
+        self.provider = provider
+        pass
+
+    def get_latest_version(self):
+        tag_name = self.provider.get_latest_version_tag_name(owner, repo)
+        return Conventions.get_version_from_tag(tag_name)
+
+    def get_candidate_version(self):
+        return get_latest_version(provider).inc_minor()
+
+    def get_hotfix_version(self):
+        return self.get_latest_version().inc_patch()
+
+    def get_candidate_branch(self):
+        version = self.get_candidate_version()
+        return Conventions.get_branch_name_from_version(version, RELEASE_BRANCH_PRE)
+
+    def get_hotfix_branch(self):
+        version = self.get_hotfix_version()
+        return get_branch_name_from_version(version, HOTFIX_BRANCH_PRE)
+
+    def create_release_candidate(self, whatif):
+        """
+        Pre: The master branch has a tagged latest version (TODO: Support if it hasn't)
+
+        The candidate release is based on info from Github about the latest release. For
+        this, there should be a new branch, called release-#.#.#. If such a branch already
+        exists, no new branch is created.
+
+        The next step is to create a pull request from develop to the new release branch.
+        This branch should then be code reviewed and eventually merged.
+        """
+        candidate_branch = get_candidate_branch(owner, repo)
+
+        print "Creating a new branch, '{}' from master".format(candidate_branch)
         if not whatif:
-            try:
-                merge(owner, repo, base, head, msg)
-            except MergeException:
-                print "Merge exception while merging '{}' to '{}'. " + \
-                      "This can happen if there was a hotfix release in between."\
-                      .format(head, base)
-                sys.exit(1)
+            create_branch_from_master(owner, repo, candidate_branch)
 
-    merge_cond(whatif, owner, repo, MASTER_BRANCH, branch)
+        # Merge from 'develop' into the new release branch:
+        print "Merging from {} to {}".format(DEVELOP_BRANCH, candidate_branch)
+        if not whatif:
+            self.provider.merge(candidate_branch, DEVELOP_BRANCH, 
+                "Merging '{}' into '{}'".format(DEVELOP_BRANCH, candidate_branch))
 
-    tag_name = get_tag_from_branch(branch)
-    print "Tagging HEAD on {} as release {}".format(MASTER_BRANCH, tag_name)
-    if not whatif:
-        tag_release(owner, repo, tag_name, MASTER_BRANCH)
+    def create_hotfix(self, whatif):
+        """
+        Creates a hotfix branched off the master.
 
-    if branch.startswith("hotfix"):
-        # We don't know if the dev needs this in 'develop' and in the next release, but it's likely
-        # so we send a pull request to those.
-        # TODO: Don't accept if there is a pull request on a release branch
-        # TODO: Branch
-        # TODO: Does it work to create pull requests into both?
-        print "Hotfix branch merged - sending pull requests to develop and release"
-        print "These pull requests need to be reviewed and potential merge conflicts resolved"
+        Hotfix branches are treated similar to release branches, except the patch number
+        has been increased instead and they are before the release in the deployment pipeline.
+        """
+        hotfix_branch = get_hotfix_branch(owner, repo)
+        print "Creating a new hotfix branch, '{}' from master".format(hotfix_branch)
+        if not whatif:
+            self.provider.create_branch_from_master(hotfix_branch)
 
-        msg = "Apply hotfix '{}' to '{}'".format(branch, DEVELOP_BRANCH)
-        body = "Pull request was made automatically by release-tools"
-        create_pull_request(owner, repo, DEVELOP_BRANCH, branch, msg, body)
+        print "Not merging automatically into a hotfix - hotfix patches should be sent as pull requests to it"
 
-        if next_release:
-            msg = "Apply hotfix '{}' to '{}'".format(branch, next_release)
+    def download_next_in_queue(self, path, force, whatif):
+        queue = get_queue(owner, repo)
+        if len(queue) > 1:
+            print "There are more than one items in the queue. Downloading the first item."
+
+        branch = queue[0]
+
+        full_path = os.path.join(path, branch)
+        if not force and os.path.exists(full_path):
+            print "There already exists a directory for the build at '{}'. Please specify a non-existing path or --force.".format(full_path)
+            sys.exit(1)
+        print "Downloading and extracting '{}' to '{}'. This may take a few seconds...".format(branch, full_path)
+        if not whatif:
+            provider.download_archive(branch, full_path)
+
+    def get_hotfix_branches(branch_names):
+        """Returns the version numbers for all hotfix branches defined"""
+        for branch_name in branch_names:
+            if branch_name.startswith(HOTFIX_BRANCH_PRE):
+                yield branch_name
+
+    def get_release_branches(branch_names):
+        """Returns the version numbers for all hotfix branches defined"""
+        for branch_name in branch_names:
+            if branch_name.startswith(RELEASE_BRANCH_PRE):
+                yield branch_name
+
+    def get_pending_hotfix_branches(current_version, branch_names):
+        for branch in get_hotfix_branches(branch_names):
+            branch_version = Version.from_string(branch.split("-")[1])
+            if branch_version[0] == current_version[0] and \
+               branch_version[1] == current_version[1] and \
+               branch_version[2] > current_version[2]:
+                yield branch
+
+    def get_pending_release_branches(current_tag, branch_names):
+        for branch in get_release_branches(branch_names):
+            branch_version = Version.from_string(branch.split("-")[1])
+            if branch_version[0] > current_tag[0] or \
+               branch_version[1] > current_tag[1]:
+                yield branch
+
+    def get_queue(self):
+        """
+        Returns the queue. The queue can only exist of 0..1 release branches
+        and 0..1 hotfix branches.
+
+        The hotfix branch will always come before the release branch
+        """
+        branches = get_branches(self.provider)
+        branch_names = [branch["name"] for branch in branches]
+        current_version = get_latest_version(provider)
+
+        pending_hotfixes = list(get_pending_hotfix_branches(current_version, branch_names))
+        pending_releases = list(get_pending_release_branches(current_version, branch_names))
+
+        if len(pending_hotfixes) > 1:
+            raise WorkflowException("Unexpected number of pending hotfixes: {}".format(len(pending_hotfixes)))
+
+        if len(pending_releases) > 1:
+            raise WorkflowException("Unexpected number of pending releases: {}".format(len(pending_releases)))
+
+        queue = pending_hotfixes + pending_releases
+        return queue
+
+    def accept_release_candidate(self, force, whatif):
+        """
+        Accept the next item in the queue
+
+        Merge from release-x.x.x into master and tag master with vx.x.x
+
+        If force is not set to True, the user will be prompted if more than one
+        release is in the queue.
+        """
+        queue = self.get_queue()
+
+        if len(queue) == 0:
+            print "The queue is empty. Nothing to accept."
+            return
+
+        branch = queue[0]
+        next_release = None
+
+        if len(queue) > 1:
+            print "There are more than one item in the queue:"
+            for current in queue:
+                print "  {}".format(current)
+
+            if not force:
+                print "The first branch '{}' will be accepted. Continue?".format(branch)
+                accepted = raw_input("y/n> ")
+
+                if accepted != "y":
+                    print "Action cancelled by user"
+                    return
+            else:
+                print "Force set to true. The first branch will automatically be accepted"
+
+            next_release = queue[1]
+
+        def merge_cond(whatif, provider, base, head):
+            msg = "Merging from '{}' to '{}'".format(head, base)
+            print msg
+            if not whatif:
+                try:
+                    merge(provider, base, head, msg)
+                except MergeException:
+                    print "Merge exception while merging '{}' to '{}'. " + \
+                          "This can happen if there was a hotfix release in between."\
+                          .format(head, base)
+                    sys.exit(1)
+
+        merge_cond(whatif, provider, MASTER_BRANCH, branch)
+
+        tag_name = get_tag_from_branch(branch)
+        print "Tagging HEAD on {} as release {}".format(MASTER_BRANCH, tag_name)
+        if not whatif:
+            tag_release(provider, tag_name, MASTER_BRANCH)
+
+        if branch.startswith("hotfix"):
+            # We don't know if the dev needs this in 'develop' and in the next release, but it's likely
+            # so we send a pull request to those.
+            # TODO: Don't accept if there is a pull request on a release branch
+            # TODO: Branch
+            # TODO: Does it work to create pull requests into both?
+            print "Hotfix branch merged - sending pull requests to develop and release"
+            print "These pull requests need to be reviewed and potential merge conflicts resolved"
+
+            msg = "Apply hotfix '{}' to '{}'".format(branch, DEVELOP_BRANCH)
             body = "Pull request was made automatically by release-tools"
-            create_pull_request(owner, repo, next_release, branch, msg, body)
+            create_pull_request(provider, DEVELOP_BRANCH, branch, msg, body)
 
-def compare(owner, repo, base, head):
-    url = "https://api.github.com/repos/{}/{}/compare/{}...{}{}"\
-          .format(owner, repo, base, head, access_token_postfix())
-    response = requests.get(url)
-    print response.status_code, response.json()
-
-def get_branches(owner, repo):
-    url = "https://api.github.com/repos/{}/{}/branches{}".format(owner, repo, access_token_postfix())
-    response = requests.get(url)
-    return response.json()
-
-def tag_release(owner, repo, tag_name, branch):
-    # Tags a commit as a release on Github
-    url = "https://api.github.com/repos/{}/{}/releases{}".format(owner, repo, access_token_postfix())
-    # TODO: Release description
-    json = {"tag_name": tag_name, "target_commitish": branch,
-            "name": tag_name, "body": "", "draft": False, "prerelease": False}
-    response = requests.post(url, json=json)
-    if response.status_code == 201:
-        print "HEAD of master marked as release {}".format(tag_name)
-    else:
-        raise GithubException(respones.text)
+            if next_release:
+                msg = "Apply hotfix '{}' to '{}'".format(branch, next_release)
+                body = "Pull request was made automatically by release-tools"
+                create_pull_request(provider, next_release, branch, msg, body)
 
 @click.group()
 @click.option('--whatif/--not-whatif', default=False)
