@@ -21,9 +21,13 @@ RELEASE_BRANCH_PRE = "release"
 HOTFIX_BRANCH_PRE = "hotfix"
 
 def get_access_token():
-    with open('token.secret') as f:
-        access_token = f.readline().strip()
-        return access_token
+    try:
+        with open('token.secret') as f:
+            access_token = f.readline().strip()
+            return access_token
+    except IOError:
+        print "You need to add the access token for Github in ./token.secret"
+        sys.exit(1)
 
 def access_token_postfix():
     return "?access_token={}".format(get_access_token())
