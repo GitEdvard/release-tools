@@ -42,16 +42,24 @@ General flow:
   * The code has now been merged into master with the applicable tag, e.g. v1.1.0.
   
 Hotfix flow:
-  * The ``develop`` branch is not available (contains features that can't be deployed), and you need to
-  create a hotfix.
+  * The ``develop`` branch is not available (contains features that can't be deployed),
+  and you need to create a hotfix.
   * Run ``github.py create-hotfix <owner> <repo>``
-  * Get your hotfixes into this branch as it were the ``develop`` branch, probably through pull requests
-  from feature branches.
+  * Get your hotfixes into this branch as it were the ``develop`` branch, probably through
+  pull requests from feature branches.
   * When ready, run ``github.py accept <owner> <repo>``. This will accept the hotfix if one exists.
-  * TODO: The code is automatically merged into develop and the pending release branch.
+  * A pull request is made from the hotfix branch to ``develop`` and the active release
+  branch ``release-#.#.#``. It's not automatically merged since there may be merge conflicts
+  or the fix might only make sense in the latest release.
+  This acts a reminder of that the fix might need to go into these branches, but it may
+  make more sense to only merge the hotfix->release pull request and then make a separate
+  pull request from release->develop, since then fewer merge conflicts might need to be solved.
   
 Release queue:
-  * Using these workflows, there can only be one hotfix version and one release version out at the same time.
+  * Using these workflows, there can only be one hotfix version and one release version
+  out at the same time.
   * The hotfix will always be next in the queue. Hotfixes are always marked by an increased patch number. 
-  That may not always be in accordance with semantic versioning, but currently that's the only scheme supported. 
+  That may not always be in accordance with semantic versioning, but currently that's
+  the only scheme supported.
+
 

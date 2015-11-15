@@ -4,6 +4,7 @@ import zipfile
 import StringIO
 import sys
 
+
 class GithubProvider:
     def __init__(self, owner, repo, access_token=None):
         self.owner = owner
