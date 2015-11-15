@@ -96,7 +96,8 @@ def status(ctx, owner, repo):
     print "Queue:"
     # TODO: Use cache for api calls when possible
     for branch in queue:
-        print "  {}".format(branch)
+        pull_requests = len(workflow.provider.get_pull_requests(branch))
+        print "  {} (PRs={})".format(branch, pull_requests)
 
     # TODO: Compare relevant branches
     print ""
@@ -106,5 +107,7 @@ def cli_main():
     cli(obj={})
 
 if __name__ == "__main__":
+    #import logging
+    #logging.basicConfig(level=logging.DEBUG)
     cli_main()
 

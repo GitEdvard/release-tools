@@ -1,17 +1,16 @@
 #!/usr/bin/env python
 import requests
-import logging
-import click
-import re
 import zipfile
 import StringIO
-import os
 import sys
 
-class GithubProvider():
-    def __init__(self, owner, repo):
+class GithubProvider:
+    def __init__(self, owner, repo, access_token=None):
         self.owner = owner
         self.repo = repo
+        if not access_token:
+            access_token = self.get_access_token_from_file()
+        self.access_token = access_token
 
     def get_latest_version_tag_name(self):
         url = "https://api.github.com/repos/{}/{}/releases/latest{}"\
@@ -24,9 +23,8 @@ class GithubProvider():
             raise GithubException(response.text)
 
     def get_refs_heads(self):
-        access_token = self.get_access_token()
         url = "https://api.github.com/repos/{}/{}/git/refs/heads?access_token={}"\
-                  .format(self.owner, self.repo, access_token)
+                  .format(self.owner, self.repo, self.access_token)
         response = requests.get(url)
         return response.json()
 
@@ -69,12 +67,6 @@ class GithubProvider():
             msg = "Unexpected result code from Github ({}): {}".format(response.status_code, response.text)
             raise GithubException(msg)
 
-    def list_pull_requests(self):
-        url = "https://api.github.com/repos/{}/{}/pulls{}"\
-                  .format(self.owner, self.repo, self.access_token_postfix())
-        resp = requests.get(url)
-        print resp.json()
-
     def create_pull_request(self, base, head, title, body):
         url = "https://api.github.com/repos/{}/{}/pulls{}"\
                   .format(self.owner, self.repo, self.access_token_postfix())
@@ -116,8 +108,35 @@ class GithubProvider():
         else:
             raise GithubException(response.text)
 
+    def get_pull_requests(self, base_branch):
+        """Returns the list of open pull requests to the base"""
+        return self._get("/repos/{owner}/{repo}/pulls", {'base': base_branch})
+
+    def has_pull_requests(self, base_branch):
+        return len(self.get_pull_requests(base_branch)) > 0
+
+    def _get(self, resource, params={}):
+        url = self._url(resource)
+        params.update({'access_token': self.access_token})
+        resp = requests.get(url, params=params)
+        if resp.status_code == 200:
+            return resp.json()
+        else:
+            raise GithubException(resp.text)
+
+    def _url(self, templ):
+        """
+        Returns a github api URL from the template specified
+        in the help, similar to /repos/{owner}/{repo}/pulls
+        """
+        req = templ.format(owner=self.owner,
+                           repo=self.repo)
+        return "{base}{req}".format(
+            base="https://api.github.com",
+            req=req)
+
     @staticmethod
-    def get_access_token():
+    def get_access_token_from_file():
         try:
             with open('token.secret') as f:
                 access_token = f.readline().strip()
@@ -127,7 +146,7 @@ class GithubProvider():
             sys.exit(1)
 
     def access_token_postfix(self):
-        return "?access_token={}".format(self.get_access_token())
+        return "?access_token={}".format(self.access_token)
 
     def compare(self, base, head):
         url = "https://api.github.com/repos/{}/{}/compare/{}...{}{}"\

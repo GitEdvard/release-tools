@@ -169,7 +169,10 @@ class Workflow:
 
         # TODO: Don't accept the release if it has a pull request.
         # That might be a hotfix waiting to be merged.
-
+        if self.provider.has_pull_requests(branch):
+            print "The branch being accepted has pull requests"
+            print "which need to be resolved before accepting."
+            sys.exit(1)
 
         next_release = None
 
