@@ -42,7 +42,7 @@ setup(
 
     entry_points={
         'console_scripts': [
-            'release-tools=release_tools.github:cli_main',
+            'release-tools=release_tools.cli:cli_main',
         ],
     },
 )
