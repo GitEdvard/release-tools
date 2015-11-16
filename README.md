@@ -6,11 +6,11 @@ Python tools for handling versioned releases. Currently only handles releases us
 
 **Install**
 
-pip install -U git://github.com/withrocks/release-tools.git#egg=release-tools
+python -m pip install -U git+https://github.com/withrocks/release-tools.git#egg=release-tools
 
 or, with a version:
 
-pip install -U git://github.com/withrocks/release-tools.git@v0.1.2#egg=release-tools
+python -m pip install -U git+https://github.com/withrocks/release-tools.git@v0.1.2#egg=release-tools
 
 
 *The tool may work in an unexpected manner if the master branch is changed without the use
