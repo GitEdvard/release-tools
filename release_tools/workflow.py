@@ -242,17 +242,25 @@ class Version(tuple):
     def __repr__(self):
         return ".".join([str(num) for num in self])
 
-    def _make_delta(self, *delta):
-        return Version([self[0] + delta[0], self[1] + delta[1], self[2] + delta[2]])
-
     def inc_major(self):
-        return self._make_delta(1, 0, 0)
+        """Increments the major version, setting less significant values to zero"""
+        return Version([self.major() + 1, 0, 0])
 
     def inc_minor(self):
-        return self._make_delta(0, 1, 0)
+        """Increments the minor version, setting less significant values to zero"""
+        return Version([self.major(), self.minor() + 1, 0])
 
     def inc_patch(self):
-        return self._make_delta(0, 0, 1)
+        return Version([self.major(), self.minor(), self.patch() + 1])
+
+    def major(self):
+        return self[0]
+
+    def minor(self):
+        return self[1]
+
+    def patch(self):
+        return self[2]
 
     @staticmethod
     def from_string(s):

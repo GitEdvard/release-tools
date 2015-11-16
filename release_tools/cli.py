@@ -83,7 +83,11 @@ def status(ctx, owner, repo):
     queue = workflow.get_queue()
 
     latest_version = workflow.get_latest_version()
+    next_version = workflow.get_candidate_version()
+    hotfix_version = workflow.get_hotfix_version()
     print "Latest version: {}".format(latest_version)
+    print "  - Next version version would be: {}".format(next_version)
+    print "  - Next hotfix version would be: {}".format(hotfix_version)
 
     # TODO: Report all release tags too
 
