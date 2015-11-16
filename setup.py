@@ -9,7 +9,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='release-tools',
-    version='0.1.2',
+    version='0.2.0',
     description='Python tools for release management',
     long_description=long_description,
     url='https://github.com/withrocks/release-tools',
