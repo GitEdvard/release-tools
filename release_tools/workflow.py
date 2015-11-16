@@ -80,7 +80,7 @@ class Workflow:
 
         print "Not merging automatically into a hotfix - hotfix patches should be sent as pull requests to it"
 
-    def download_next_in_queue(self, path, force, whatif):
+    def download_next_in_queue(self, path, force):
         queue = self.get_queue()
         if len(queue) > 1:
             print "There are more than one items in the queue. Downloading the first item."
@@ -91,7 +91,7 @@ class Workflow:
             print "There already exists a directory for the build at '{}'. Please specify a non-existing path or --force.".format(full_path)
             sys.exit(1)
         print "Downloading and extracting '{}' to '{}'. This may take a few seconds...".format(branch, full_path)
-        if not whatif:
+        if not self.whatif:
             self.provider.download_archive(branch, full_path)
 
     @staticmethod
