@@ -9,8 +9,6 @@ class GithubProvider:
     def __init__(self, owner, repo, access_token=None):
         self.owner = owner
         self.repo = repo
-        if not access_token:
-            access_token = self.get_access_token_from_file()
         self.access_token = access_token
 
     def get_latest_version_tag_name(self):
@@ -94,7 +92,10 @@ class GithubProvider:
         url = "https://api.github.com/repos/{}/{}/branches{}"\
                   .format(self.owner, self.repo, self.access_token_postfix())
         response = requests.get(url)
-        return response.json()
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise GithubException(response.text)
 
     def tag_release(self, tag_name, branch):
         # Tags a commit as a release on Github
@@ -135,16 +136,6 @@ class GithubProvider:
         return "{base}{req}".format(
             base="https://api.github.com",
             req=req)
-
-    @staticmethod
-    def get_access_token_from_file():
-        try:
-            with open('token.secret') as f:
-                access_token = f.readline().strip()
-                return access_token
-        except IOError:
-            print "You need to add the access token for Github in ./token.secret"
-            sys.exit(1)
 
     def access_token_postfix(self):
         return "?access_token={}".format(self.access_token)

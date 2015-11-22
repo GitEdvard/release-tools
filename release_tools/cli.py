@@ -1,18 +1,28 @@
 import click
+import yaml
+from github import GithubProvider
 from release_tools.workflow import Workflow, Conventions, DEVELOP_BRANCH
-from release_tools.github import GithubProvider
 
 
-def create_workflow(owner, repo, whatif):
-    provider = GithubProvider(owner, repo)
+def create_workflow(owner, repo, whatif, config):
+    access_token = config["access_token"] if config and "access_token" in config else None
+    provider = GithubProvider(owner, repo, access_token)
     return Workflow(provider, Conventions, whatif)
 
 
 @click.group()
 @click.option('--whatif/--not-whatif', default=False)
+@click.option('--config')
 @click.pass_context
-def cli(ctx, whatif):
+def cli(ctx, whatif, config):
     ctx.obj['whatif'] = whatif
+    # Read config file containing access token:
+    if config:
+        with open(config) as f:
+            ctx.obj["config"] = yaml.load(f)
+    else:
+        ctx.obj["config"] = None
+
     if whatif:
         print "*** Running with whatif ON - no writes ***"
 
@@ -23,7 +33,7 @@ def cli(ctx, whatif):
 @click.pass_context
 def create_cand(ctx, owner, repo):
     print "Creating a release candidate from {}".format(DEVELOP_BRANCH)
-    workflow = create_workflow(owner, repo, ctx.obj['whatif']) 
+    workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
     workflow.create_release_candidate()
 
 
@@ -33,7 +43,7 @@ def create_cand(ctx, owner, repo):
 @click.pass_context
 def create_hotfix(ctx, owner, repo):
     print "Creating a hotfix branch"
-    workflow = create_workflow(owner, repo, ctx.obj['whatif']) 
+    workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
     workflow.create_hotfix()
 
 
@@ -44,7 +54,7 @@ def create_hotfix(ctx, owner, repo):
 @click.pass_context
 def accept(ctx, owner, repo, force):
     print "Accepting the current release candidate"
-    workflow = create_workflow(owner, repo, ctx.obj['whatif']) 
+    workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
     workflow.accept_release_candidate(force)
 
 
@@ -56,7 +66,7 @@ def accept(ctx, owner, repo, force):
 @click.pass_context
 def download(ctx, owner, repo, path, force):
     print "Downloading the next release in the queue"
-    workflow = create_workflow(owner, repo, ctx.obj['whatif']) 
+    workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
     workflow.download_next_in_queue(path, force)
 
 
@@ -65,7 +75,7 @@ def download(ctx, owner, repo, path, force):
 @click.argument('repo')
 @click.pass_context
 def latest(ctx, owner, repo):
-    workflow = create_workflow(owner, repo, ctx.obj['whatif']) 
+    workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
     latest_version = workflow.get_latest_version()
     print "Latest version: {0}".format(latest_version)
 
@@ -75,7 +85,7 @@ def latest(ctx, owner, repo):
 @click.argument('repo')
 @click.pass_context
 def status(ctx, owner, repo):
-    workflow = create_workflow(owner, repo, ctx.obj['whatif']) 
+    workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
 
     branches = workflow.provider.get_branches()
     branch_names = [branch["name"] for branch in branches]
@@ -111,7 +121,5 @@ def cli_main():
     cli(obj={})
 
 if __name__ == "__main__":
-    #import logging
-    #logging.basicConfig(level=logging.DEBUG)
     cli_main()
 
