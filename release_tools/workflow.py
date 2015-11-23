@@ -214,9 +214,6 @@ class Workflow:
         if branch.startswith("hotfix"):
             # We don't know if the dev needs this in 'develop' and in the next release, but it's likely
             # so we send a pull request to those.
-            # TODO: Don't accept if there is a pull request on a release branch
-            # TODO: Branch
-            # TODO: Does it work to create pull requests into both?
             print "Hotfix branch merged - sending pull requests to develop and release"
             print "These pull requests need to be reviewed and potential merge conflicts resolved"
 
