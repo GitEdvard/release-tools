@@ -2,6 +2,7 @@ import click
 import yaml
 from github import GithubProvider
 from release_tools.workflow import Workflow, Conventions, DEVELOP_BRANCH
+import logging
 
 
 def create_workflow(owner, repo, whatif, config):
@@ -15,6 +16,8 @@ def create_workflow(owner, repo, whatif, config):
 @click.option('--config')
 @click.pass_context
 def cli(ctx, whatif, config):
+    # TODO: param
+    logging.basicConfig(level=logging.DEBUG)
     ctx.obj['whatif'] = whatif
     # Read config file containing access token:
     if config:
@@ -32,7 +35,7 @@ def cli(ctx, whatif, config):
 @click.argument('repo')
 @click.pass_context
 def create_cand(ctx, owner, repo):
-    print "Creating a release candidate from {}".format(DEVELOP_BRANCH)
+    click.echo("Creating a release candidate from {}".format(DEVELOP_BRANCH))
     workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
     workflow.create_release_candidate()
 
@@ -42,7 +45,7 @@ def create_cand(ctx, owner, repo):
 @click.argument('repo')
 @click.pass_context
 def create_hotfix(ctx, owner, repo):
-    print "Creating a hotfix branch"
+    click.echo("Creating a hotfix branch")
     workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
     workflow.create_hotfix()
 
@@ -53,7 +56,7 @@ def create_hotfix(ctx, owner, repo):
 @click.option('--force/--not-force', default=False)
 @click.pass_context
 def accept(ctx, owner, repo, force):
-    print "Accepting the current release candidate"
+    click.echo("Accepting the current release candidate")
     workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
     workflow.accept_release_candidate(force)
 
@@ -65,7 +68,7 @@ def accept(ctx, owner, repo, force):
 @click.option('--force/--not-force', default=False)
 @click.pass_context
 def download(ctx, owner, repo, path, force):
-    print "Downloading the next release in the queue"
+    click.echo("Downloading the next release in the queue")
     workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
     workflow.download_next_in_queue(path, force)
 
@@ -77,7 +80,7 @@ def download(ctx, owner, repo, path, force):
 def latest(ctx, owner, repo):
     workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
     latest_version = workflow.get_latest_version()
-    print "Latest version: {0}".format(latest_version)
+    click.echo("Latest version: {0}".format(latest_version))
 
 
 @cli.command()
@@ -95,26 +98,40 @@ def status(ctx, owner, repo):
     latest_version = workflow.get_latest_version()
     next_version = workflow.get_candidate_version()
     hotfix_version = workflow.get_hotfix_version()
-    print "Latest version: {}".format(latest_version)
-    print "  - Next version version would be: {}".format(next_version)
-    print "  - Next hotfix version would be: {}".format(hotfix_version)
+    click.echo("Latest version: {}".format(latest_version))
+    click.echo("  - Next version version would be: {}".format(next_version))
+    click.echo("  - Next hotfix version would be: {}".format(hotfix_version))
 
     # TODO: Report all release tags too
 
-    print ""
-    print "Branches:"
+    click.echo("")
+    click.echo("Branches:")
     for branch in branch_names:
-        print "  {}{}".format(branch, " *" if (branch in queue) else "")
+        click.echo("  {}{}".format(branch, " *" if (branch in queue) else ""))
 
-    print ""
-    print "Queue:"
+    click.echo("")
+    click.echo("Queue:")
     # TODO: Use cache for api calls when possible
     for branch in queue:
         pull_requests = len(workflow.provider.get_pull_requests(branch))
-        print "  {} (PRs={})".format(branch, pull_requests)
+        click.echo("  {} (PRs={})".format(branch, pull_requests))
 
     # TODO: Compare relevant branches
-    print ""
+    click.echo("")
+
+
+@cli.command()
+@click.pass_context
+@click.option("--loop/--no-loop", default=True)
+def mirror(ctx, loop):
+    mirror_section = ctx.obj["config"].get("mirror", None)
+
+    if not mirror_section:
+        raise Exception("You need to provide a config file with a mirror section")
+    logging.debug("Got section: {}".format(mirror_section))
+
+    import release_tools.mirror as mirror_module
+    mirror_module.start_synch_task(mirror_section, loop)
 
 
 def cli_main():

@@ -1,0 +1,10 @@
+# Configuration for code mirroring between two remotes
+
+# $ release-tools --config ./demo/synch-remotes.yml
+
+mirror:
+  source: git@github.com:withrocks/release-tools.git
+  target: git@localhost:withrocks/release-tools.git
+  name: release-tools
+  path: ./temp/source
+
