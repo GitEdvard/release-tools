@@ -1,5 +1,6 @@
 import os
 import logging
+import subprocess
 
 
 class RepoInfo(object):
@@ -34,6 +35,16 @@ class RepoInfo(object):
         return repr(self.__dict__)
 
 
+def exec_git_cmd(command, ssh_key=None):
+    """Executes a git command with or without a selected ssh-key (deployment key)"""
+    if ssh_key:
+        command = ["ssh-agent", "bash", "-c", "ssh-add {} && {}".format(ssh_key, command)]
+    else:
+        command = [command]
+    logging.debug("Executing command: {}".format(command))
+
+
 def clone(repo_info):
     """Clones using the source remote. Uses deploy keys if necessary"""
-    pass
+    exec_git_cmd("git clone {}".format(repo_info.source), repo_info.deploy_key)
+
