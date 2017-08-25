@@ -29,8 +29,8 @@ The following transient branches also exist:
 
 ## General flow
   * Code has been submitted to the ``develop`` branch, probably through pull requests from feature branches
-  * When the next version is ready to be released, run ``release-tools create-cand <owner> <repo>``
-  * This creates a new release branch called ``release-#.#.#``, where the minor version has 
+  * When the next version is ready to be released, run ``release-tools create-cand <owner> <repo> [--major]``
+  * This creates a new release branch called ``release-#.#.#``, where the minor or major version has 
     been increased, e.g. 1.0.2 -> 1.1.0.
   * Build and validate (separate workflow). Latest version can be fetched with
   ``release-tools download <owner> <repo> <path>``. Deploy if it passes the QA process.

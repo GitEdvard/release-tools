@@ -29,21 +29,22 @@ class Workflow:
         tag_name = self.provider.get_latest_version_tag_name()
         return self.conventions.get_version_from_tag(tag_name)
 
-    def get_candidate_version(self):
-        return self.get_latest_version().inc_minor()
+    def get_candidate_version(self, major_inc=False):
+        return self.get_latest_version().inc_major() if major_inc \
+            else self.get_latest_version().inc_minor()
 
     def get_hotfix_version(self):
         return self.get_latest_version().inc_patch()
 
-    def get_candidate_branch(self):
-        version = self.get_candidate_version()
+    def get_candidate_branch(self, major_inc=False):
+        version = self.get_candidate_version(major_inc=major_inc)
         return self.conventions.get_branch_name_from_version(version, RELEASE_BRANCH_PRE)
 
     def get_hotfix_branch(self):
         version = self.get_hotfix_version()
         return self.conventions.get_branch_name_from_version(version, HOTFIX_BRANCH_PRE)
 
-    def create_release_candidate(self):
+    def create_release_candidate(self, major_inc=False):
         """
         Pre: The master branch has a tagged latest version (TODO: Support if it hasn't)
 
@@ -54,7 +55,7 @@ class Workflow:
         The next step is to create a pull request from develop to the new release branch.
         This branch should then be code reviewed and eventually merged.
         """
-        candidate_branch = self.get_candidate_branch()
+        candidate_branch = self.get_candidate_branch(major_inc=major_inc)
 
         print "Creating a new branch, '{}' from master".format(candidate_branch)
         if not self.whatif:

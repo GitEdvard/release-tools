@@ -30,11 +30,12 @@ def cli(ctx, whatif, config):
 @cli.command('create-cand')
 @click.argument('owner')
 @click.argument('repo')
+@click.option('--major', is_flag=True)
 @click.pass_context
-def create_cand(ctx, owner, repo):
+def create_cand(ctx, owner, repo, major):
     print "Creating a release candidate from {}".format(DEVELOP_BRANCH)
     workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
-    workflow.create_release_candidate()
+    workflow.create_release_candidate(major_inc=major)
 
 
 @cli.command('create-hotfix')
