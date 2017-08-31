@@ -2,6 +2,7 @@
 import requests
 import zipfile
 import StringIO
+import dateutil.parser
 import sys
 
 
@@ -87,6 +88,25 @@ class GithubProvider:
             archive = zipfile.ZipFile(StringIO.StringIO(response.content))
             archive.extractall(save_to_path)
             print "Extracted"
+
+    def download_release_history(self, path):
+        url = "https://api.github.com/repos/{owner}/{repo}/releases{token}"\
+              .format(owner=self.owner, repo=self.repo, token=self.access_token_postfix())
+        response = requests.get(url)
+        if response.status_code == 200:
+            print "Writing to file..."
+            with open(path, 'w') as f:
+                f.write(self._release_history_contents(response.json()))
+            print "done."
+        else:
+            print "Something went wrong, contents cannot be downloaded"
+
+    def _release_history_contents(self, json):
+        c = []
+        for release in json:
+            d = dateutil.parser.parse(release['published_at'])
+            c.append("{}, {:%Y-%m-%d}\n\n{}".format(release['name'], d, release['body']))
+        return str.join('\n\n\n', c)
 
     def get_branches(self):
         url = "https://api.github.com/repos/{}/{}/branches{}"\

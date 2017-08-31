@@ -95,6 +95,11 @@ class Workflow:
         if not self.whatif:
             self.provider.download_archive(branch, full_path)
 
+    def download_release_history(self, path):
+        print "Downloading release history to {}".format(path)
+        if not self.whatif:
+            self.provider.download_release_history(path)
+
     @staticmethod
     def get_hotfix_branches(branch_names):
         """
