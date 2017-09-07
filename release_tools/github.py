@@ -100,6 +100,7 @@ class GithubProvider:
                 f.write(self._release_history_contents(response.json()))
             print("done.")
         else:
+            raise GithubException("Something went wrong, contents cannot be downloaded")
 
     def _release_history_contents(self, json):
         c = []
