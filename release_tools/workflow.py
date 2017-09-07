@@ -124,8 +124,10 @@ class Workflow:
     def get_pending_release_branches(self, current_tag, branch_names):
         for branch in self.get_release_branches(branch_names):
             branch_version = Version.from_string(branch.split("-")[1])
-            if branch_version[0] > current_tag[0] or \
-               branch_version[1] > current_tag[1]:
+            if branch_version[0] > current_tag[0]:
+                yield branch
+            elif branch_version[0] == current_tag[0] and \
+                 branch_version[1] > current_tag[1]:
                 yield branch
 
     def get_queue(self):
