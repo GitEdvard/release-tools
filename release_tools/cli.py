@@ -71,6 +71,17 @@ def download(ctx, owner, repo, path, force):
     workflow.download_next_in_queue(path, force)
 
 
+@cli.command('download-release-history')
+@click.argument('owner')
+@click.argument('repo')
+@click.argument('directory')
+@click.pass_context
+def download_release_history(ctx, owner, repo, directory):
+    print "Downloading release history"
+    workflow = create_workflow(owner, repo, ctx.obj['whatif'], ctx.obj['config'])
+    workflow.download_release_history(directory)
+
+
 @cli.command()
 @click.argument('owner')
 @click.argument('repo')

@@ -1,7 +1,9 @@
 #!/usr/bin/env python
+from __future__ import print_function
 import requests
 import zipfile
 import StringIO
+import dateutil.parser
 import sys
 
 
@@ -47,9 +49,9 @@ class GithubProvider:
         response = requests.post(url, json=body)
 
         if response.status_code == 201:
-            print "Branch successfully created"
+            print("Branch successfully created")
         elif response.status_code == 422:
-            print "Branch already exists"  # TODO: Check error code def in docs
+            print("Branch already exists")  # TODO: Check error code def in docs
 
     def merge(self, base, head, commit_message):
         url = "https://api.github.com/repos/{}/{}/merges{}"\
@@ -57,9 +59,9 @@ class GithubProvider:
         json = {"base": base, "head": head, "commit_message": commit_message}
         response = requests.post(url, json=json)
         if response.status_code == 201:
-            print "Successfully merged '{}' into '{}'".format(head, base)
+            print("Successfully merged '{}' into '{}'".format(head, base))
         elif response.status_code == 204:
-            print "Nothing to merge"
+            print("Nothing to merge")
         elif response.status_code == 409:
             raise MergeException(response.text)
         else:
@@ -72,9 +74,9 @@ class GithubProvider:
         json = {"head": head, "base": base, "title": title, "body": body}
         resp = requests.post(url, json=json)
         if resp.status_code == 201:
-            print "A pull request has been created from '{}' to '{}'".format(head, base)
+            print("A pull request has been created from '{}' to '{}'".format(head, base))
         else:
-            print resp.status_code, resp.text
+            print(resp.status_code, resp.text)
 
     def download_archive(self, branch, save_to_path, ball="zipball"):
         """Ball can be either zipball or tarball"""
@@ -83,10 +85,29 @@ class GithubProvider:
               .format(owner=self.owner, repo=self.repo, archive_format=ball, ref=branch, token=self.access_token_postfix())
         response = requests.get(url)
         if response.status_code == 200:
-            print "Downloaded the archive. Extracting..."
+            print("Downloaded the archive. Extracting...")
             archive = zipfile.ZipFile(StringIO.StringIO(response.content))
             archive.extractall(save_to_path)
-            print "Extracted"
+            print("Extracted")
+
+    def download_release_history(self, path):
+        url = "https://api.github.com/repos/{owner}/{repo}/releases{token}"\
+              .format(owner=self.owner, repo=self.repo, token=self.access_token_postfix())
+        response = requests.get(url)
+        if response.status_code == 200:
+            print("Writing to file...")
+            with open(path, 'w') as f:
+                f.write(self._release_history_contents(response.json()))
+            print("done.")
+        else:
+            raise GithubException("Something went wrong, contents cannot be downloaded")
+
+    def _release_history_contents(self, json):
+        c = []
+        for release in json:
+            d = dateutil.parser.parse(release['published_at'])
+            c.append("{}, {:%Y-%m-%d}\n\n{}".format(release['name'], d, release['body']))
+        return str.join('\n\n\n', c)
 
     def get_branches(self):
         url = "https://api.github.com/repos/{}/{}/branches{}"\
@@ -106,7 +127,7 @@ class GithubProvider:
                 "name": tag_name, "body": "", "draft": False, "prerelease": False}
         response = requests.post(url, json=json)
         if response.status_code == 201:
-            print "HEAD of master marked as release {}".format(tag_name)
+            print("HEAD of master marked as release {}".format(tag_name))
         else:
             raise GithubException(response.text)
 
@@ -144,7 +165,7 @@ class GithubProvider:
         url = "https://api.github.com/repos/{}/{}/compare/{}...{}{}"\
               .format(self.owner, self.repo, base, head, self.access_token_postfix())
         response = requests.get(url)
-        print response.status_code, response.json()
+        print(response.status_code, response.json())
 
 
 class GithubException(Exception):
