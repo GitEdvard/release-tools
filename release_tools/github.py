@@ -105,8 +105,10 @@ class GithubProvider:
     def _release_history_contents(self, json):
         c = []
         for release in json:
-            d = dateutil.parser.parse(release['published_at'])
-            c.append("{}, {:%Y-%m-%d}\n\n{}".format(release['name'], d, release['body']))
+            d = dateutil.parser.parse(release['published_at'].encode('utf-8'))
+            release_name = release['name'].encode('utf-8')
+            release_body = release['body'].encode('utf-8')
+            c.append("{}, {:%Y-%m-%d}\n\n{}".format(release_name, d, release_body))
         return str.join('\n\n\n', c)
 
     def get_branches(self):
