@@ -108,6 +108,7 @@ class GithubProvider:
             d = dateutil.parser.parse(release['published_at'].encode('utf-8'))
             release_name = release['name'].encode('utf-8')
             release_body = release['body'].encode('utf-8')
+            release_body = '\n'.join(release_body.splitlines())
             c.append("{}, {:%Y-%m-%d}\n\n{}".format(release_name, d, release_body))
         return str.join('\n\n\n', c)
 
